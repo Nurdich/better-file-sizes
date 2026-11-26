@@ -1,0 +1,53 @@
+#include <windows.h>
+#include "resource.h"
+1 ICON "bfs.ico"
+1 RT_MANIFEST "daemon.manifest"
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 1,6,0,5
+PRODUCTVERSION 1,6,0,5
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "080404b0"
+    BEGIN
+      VALUE "FileDescription", "Better file sizes daemon"
+      VALUE "ProductName", "Better file sizes (standalone)"
+      VALUE "FileVersion", "1.6.0.5"
+      VALUE "LegalCopyright", "GNU GPL v3"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0804, 1200
+  END
+END
+
+// Settings window. Texts are set from the C++ code (UTF-16 literals) so the
+// resource script stays ASCII-only and compiles the same with windres / rc.
+IDD_SETTINGS DIALOGEX 0, 0, 290, 252
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "Better File Sizes"
+FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
+BEGIN
+    GROUPBOX        "", IDC_GRP_DISPLAY, 7, 7, 276, 114
+    LTEXT           "", IDC_LBL_FOLDER, 15, 23, 82, 9
+    COMBOBOX        IDC_FOLDER, 100, 20, 175, 90, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "", IDC_HINT, 100, 37, 175, 26
+    LTEXT           "", IDC_LBL_UNITS, 15, 70, 82, 9
+    COMBOBOX        IDC_UNITS, 100, 67, 175, 70, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    AUTOCHECKBOX    "", IDC_IEC, 15, 87, 260, 11, WS_TABSTOP
+    AUTOCHECKBOX    "", IDC_MIX, 15, 102, 260, 11, WS_TABSTOP
+    GROUPBOX        "", IDC_GRP_INJECT, 7, 127, 276, 66
+    LTEXT           "", IDC_LBL_MODE, 15, 143, 82, 9
+    COMBOBOX        IDC_MODE, 100, 140, 175, 70, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    AUTOCHECKBOX    "", IDC_WAITEV, 15, 159, 260, 11, WS_TABSTOP
+    AUTOCHECKBOX    "", IDC_AUTOSTART, 15, 174, 260, 11, WS_TABSTOP
+    LTEXT           "", IDC_LBL_INI, 7, 200, 50, 9
+    LTEXT           "", IDC_INIPATH, 57, 200, 226, 20, SS_NOPREFIX
+    PUSHBUTTON      "", IDC_OPENINI, 7, 228, 82, 16, WS_TABSTOP
+    DEFPUSHBUTTON   "", IDOK, 149, 228, 64, 16, WS_TABSTOP
+    PUSHBUTTON      "", IDCANCEL, 219, 228, 64, 16, WS_TABSTOP
+END

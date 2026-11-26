@@ -1,0 +1,105 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW-w64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build zip \
+            g++-mingw-w64-x86-64 g++-mingw-w64-i686
+
+      - name: Build x64 and x86
+        run: |
+          set -euo pipefail
+          cmake -S . -B out/x64 -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-x64.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build out/x64
+          cmake -S . -B out/x86 -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-x86.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build out/x86
+          for arch in x64 x86; do
+            for f in BetterFileSizes.dll BetterFileSizesEverything.dll; do
+              test -f "out/$arch/$f"
+            done
+          done
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          root=dist/pkg
+          rm -rf dist
+          for arch in x64 x86; do
+            dst="$root/$arch"
+            mkdir -p "$dst/Everything-plugins/BetterFileSizes"
+            cp "out/$arch/BetterFileSizesEverything.dll" "$dst/Everything-plugins/"
+            cp "out/$arch/BetterFileSizes.dll" config/BetterFileSizes.ini \
+               "$dst/Everything-plugins/BetterFileSizes/"
+          done
+          mkdir -p "$root/scripts"
+          cp scripts/install.ps1 "$root/scripts/"
+          (cd "$root" && zip -r ../BetterFileSizes-windows.zip .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BetterFileSizes-windows
+          path: dist/BetterFileSizes-windows.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: BetterFileSizes-windows
+          path: dist
+
+      - name: Release name
+        id: meta
+        run: |
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Better File Sizes ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          files: dist/BetterFileSizes-windows.zip
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            Everything 1.5 插件，1.0.0。
+
+            中文说明：https://github.com/Nurdich/better-file-sizes-standalone/blob/main/README.md#一键安装
+
+            在 PowerShell 中执行：
+
+            ```powershell
+            powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Nurdich/better-file-sizes-standalone/main/scripts/install.ps1 -OutFile $env:TEMP\bfs-install.ps1; & $env:TEMP\bfs-install.ps1"
+            ```
+
+            English: https://github.com/Nurdich/better-file-sizes-standalone/blob/main/README.en.md#one-click-install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
