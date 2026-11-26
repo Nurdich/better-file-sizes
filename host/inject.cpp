@@ -407,15 +407,22 @@ Injector::Result Injector::Inject(DWORD pid, std::wstring* error,
         if (thread) {
             DWORD wait = WaitForSingleObject(thread, kLoadTimeoutMs);
             DWORD code = 0;
-            GetExitCodeThread(thread, &code);
+            bool gotCode = GetExitCodeThread(thread, &code) != FALSE;
             CloseHandle(thread);
+            // A timeout is not proof the thread is still inside LoadLibraryW.
+            // If it has actually exited, the path buffer is unused and must be
+            // released. If it is still running, LoadLibraryW may still be
+            // reading the buffer; leaving that allocation is required for
+            // safety. Do not terminate the remote thread.
+            bool stillRunning = wait != WAIT_OBJECT_0 &&
+                                (!gotCode || code == STILL_ACTIVE);
             if (wait == WAIT_OBJECT_0 && code != 0) {
                 result = Result::Loaded;
             } else if (error) {
                 *error = wait == WAIT_OBJECT_0 ? L"LoadLibraryW returned 0"
                                                : L"timeout (process hung?)";
             }
-            if (wait != WAIT_OBJECT_0) remote = nullptr;  // still in use
+            if (stillRunning) remote = nullptr;
         } else if (error) {
             *error = L"CreateRemoteThread failed " +
                      std::to_wstring(GetLastError());

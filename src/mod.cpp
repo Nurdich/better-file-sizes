@@ -672,6 +672,32 @@ static BOOL _everything3_wchar_buf_grow_length(_everything3_wchar_buf_t *wcbuf, 
 	return FALSE;
 }
 
+// Folder-size replies are served by the same Everything thread that is
+// still walking directories. Waiting forever freezes whoever asked
+// (Explorer's view). One second matches kGsTimeoutIPC below.
+static BOOL _everything3_wait_pipe(_everything3_client_t *client, HANDLE io_event, OVERLAPPED *overlapped) {
+	HANDLE wait_handles[2];
+	DWORD w;
+	DWORD unused;
+
+	wait_handles[0] = client->shutdown_event;
+	wait_handles[1] = io_event;
+	w = WaitForMultipleObjects(2, wait_handles, FALSE, 1000);
+	if (w == WAIT_OBJECT_0) {
+		SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
+		return FALSE;
+	}
+	if (w == WAIT_OBJECT_0 + 1) {
+		return TRUE;
+	}
+
+	CancelIoEx(client->pipe_handle, overlapped);
+	unused = 0;
+	GetOverlappedResult(client->pipe_handle, overlapped, &unused, TRUE);
+	SetLastError(EVERYTHING3_ERROR_CANCELLED);
+	return FALSE;
+}
+
 static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const void *in_data, SIZE_T in_size) {
 	if (in_size <= EVERYTHING3_DWORD_MAX) {
 		_everything3_message_t send_message;
@@ -708,14 +734,7 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 				last_error = GetLastError();
 
 				if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-					HANDLE wait_handles[2];
-
-					wait_handles[0] = client->shutdown_event;
-					wait_handles[1] = client->send_event;
-
-					if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-						SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
+					if (!_everything3_wait_pipe(client, client->send_event, &send_overlapped)) {
 						return FALSE;
 					}
 
@@ -758,14 +777,7 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 				last_error = GetLastError();
 
 				if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-					HANDLE wait_handles[2];
-
-					wait_handles[0] = client->shutdown_event;
-					wait_handles[1] = client->send_event;
-
-					if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-						SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
+					if (!_everything3_wait_pipe(client, client->send_event, &send_overlapped)) {
 						return FALSE;
 					}
 
@@ -870,14 +882,7 @@ static BOOL _everything3_recv_data(_everything3_client_t *client, void *buf, SIZ
 			last_error = GetLastError();
 
 			if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-				HANDLE wait_handles[2];
-
-				wait_handles[0] = client->shutdown_event;
-				wait_handles[1] = client->recv_event;
-
-				if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-					SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
+				if (!_everything3_wait_pipe(client, client->recv_event, &recv_overlapped)) {
 					break;
 				}
 
@@ -1177,6 +1182,24 @@ typedef struct {
 #pragma endregion  // everything_sdk
 
 constexpr DWORD kGsTimeoutIPC = 1000;
+// IS_DB_BUSY. While this is set, or the IPC window does not answer, Everything
+// is still counting. Do not open the folder-size pipe from a shell thread.
+constexpr UINT kEverythingWmIpc = WM_USER;
+constexpr WPARAM kEverythingIpcIsDbBusy = 402;
+constexpr DWORD kEverythingBusyProbeMs = 200;
+// One slow answer backs off every folder in the view, not just that one row.
+constexpr ULONGLONG kEverythingQueryBackoffMs = 5000;
+std::atomic<ULONGLONG> g_everythingQueryBackoffUntil{0};
+
+void NoteEverythingQuerySlow() {
+    g_everythingQueryBackoffUntil.store(
+        GetTickCount64() + kEverythingQueryBackoffMs, std::memory_order_relaxed);
+}
+
+bool EverythingQueryCoolingDown() {
+    return GetTickCount64() < g_everythingQueryBackoffUntil.load(
+                                  std::memory_order_relaxed);
+}
 
 #define GS_SEARCH_PREFIX L"folder:wfn:\""
 #define GS_SEARCH_SUFFIX L"\""
@@ -1306,6 +1329,29 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         return ES_QUERY_NO_ES_IPC;
     }
 
+    // A details view asks once per folder on a shell thread. One blocked
+    // query is enough; the rest wait until Everything is answering again.
+    if (EverythingQueryCoolingDown()) {
+        return ES_QUERY_TIMEOUT;
+    }
+
+    HWND busyWnd = FindWindow(EVERYTHING_IPC_WNDCLASSW_15A, nullptr);
+    if (!busyWnd) busyWnd = FindWindow(EVERYTHING_IPC_WNDCLASSW, nullptr);
+    if (busyWnd) {
+        DWORD_PTR busy = 0;
+        SetLastError(0);
+        BOOL answered = SendMessageTimeoutW(
+            busyWnd, kEverythingWmIpc, kEverythingIpcIsDbBusy, 0,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK, kEverythingBusyProbeMs, &busy);
+        // Access denied means Everything is elevated; the pipe may still
+        // answer. A timeout means its thread is inside the folder-size scan.
+        if ((!answered && GetLastError() != ERROR_ACCESS_DENIED) ||
+            (answered && busy)) {
+            NoteEverythingQuerySlow();
+            return ES_QUERY_TIMEOUT;
+        }
+    }
+
     EVERYTHING3_CLIENT* pClient = Everything3_ConnectW(nullptr);
     if (pClient) {
         Wh_Log(L"Connected to Everything IPC (unnamed instance)");
@@ -1318,9 +1364,15 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
 
     if (pClient) {
         *size = Everything3_GetFolderSizeFromFilenameW(pClient, folderPath);
+        DWORD pipeError = GetLastError();
         Everything3_DestroyClient(pClient);
 
         if (*size == -1) {
+            if (pipeError == EVERYTHING3_ERROR_CANCELLED ||
+                pipeError == EVERYTHING3_ERROR_SHUTDOWN) {
+                NoteEverythingQuerySlow();
+                return ES_QUERY_TIMEOUT;
+            }
             return ES_QUERY_NO_INDEX;
         }
 
@@ -1357,9 +1409,17 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
             g_everything4Wh_Thread = CreateThread(
                 nullptr, 0, Everything4Wh_Thread, nullptr, 0, nullptr);
             if (g_everything4Wh_Thread) {
-                // Wait for a message queue to be created.
-                WaitForSingleObject(g_everything4Wh_ThreadReadyEvent, INFINITE);
+                // The thread signals once its message queue exists. If window
+                // creation fails it exits without signaling; do not wait forever.
+                DWORD ready = WaitForSingleObject(g_everything4Wh_ThreadReadyEvent,
+                                                   kGsTimeoutIPC);
                 CloseHandle(g_everything4Wh_ThreadReadyEvent);
+                g_everything4Wh_ThreadReadyEvent = nullptr;
+                if (ready != WAIT_OBJECT_0) {
+                    Wh_Log(L"Everything IPC thread was not ready");
+                    NoteEverythingQuerySlow();
+                    return ES_QUERY_TIMEOUT;
+                }
             } else {
                 Wh_Log(L"CreateThread failed: %d", GetLastError());
             }
@@ -1438,6 +1498,9 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         g_gsReply.dwID = 0;
     }
 
+    if (result == ES_QUERY_TIMEOUT || result == ES_QUERY_REPLY_TIMEOUT) {
+        NoteEverythingQuerySlow();
+    }
     return result;
 }
 
@@ -1836,6 +1899,13 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
                 if (result == ES_QUERY_OK) {
                     cacheIt->second = size;
+                } else if (result == ES_QUERY_TIMEOUT ||
+                           result == ES_QUERY_REPLY_TIMEOUT) {
+                    // Everything is still counting. Forget this row so the
+                    // next refresh asks again once the backoff ends.
+                    g_cacheShellFolderSizes.erase(cacheIt);
+                    g_cacheShellFolderLastUsedTickCount = GetTickCount();
+                    return S_OK;
                 } else {
                     Wh_Log(L"Failed to get size: %s", g_gsQueryStatus[result]);
                 }

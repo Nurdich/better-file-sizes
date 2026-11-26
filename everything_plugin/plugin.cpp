@@ -90,6 +90,23 @@ void PinSelf() {
                        (PCWSTR)&PinSelf, &m);
 }
 
+// Everything reads the name and description as NULL-terminated UTF-8
+// (const utf8_t *). These literals have static storage, so the pointers
+// stay valid for as long as Everything holds them.
+bool UiLanguageIsChinese() {
+    return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_CHINESE;
+}
+
+const char* PluginName() {
+    return UiLanguageIsChinese() ? "更好的文件大小" : "Better File Sizes";
+}
+
+const char* PluginDescription() {
+    return UiLanguageIsChinese()
+               ? "在资源管理器和文件对话框里显示文件夹大小"
+               : "Show folder sizes in Explorer and file dialogs";
+}
+
 }  // namespace
 
 extern "C" __declspec(dllexport) void* EVERYTHING_PLUGIN_API
@@ -106,10 +123,10 @@ everything_plugin_proc(DWORD msg, void* data) {
             return (void*)(uintptr_t)EVERYTHING_PLUGIN_VERSION;
 
         case EVERYTHING_PLUGIN_PM_GET_NAME:
-            return (void*)"Better File Sizes";
+            return (void*)PluginName();
 
         case EVERYTHING_PLUGIN_PM_GET_DESCRIPTION:
-            return (void*)"Show folder sizes in Explorer and file dialogs";
+            return (void*)PluginDescription();
 
         case EVERYTHING_PLUGIN_PM_GET_AUTHOR:
             return (void*)"Nurdich";
@@ -118,7 +135,7 @@ everything_plugin_proc(DWORD msg, void* data) {
             return (void*)"1.0.0";
 
         case EVERYTHING_PLUGIN_PM_GET_LINK:
-            return (void*)"https://github.com/Nurdich/better-file-sizes-standalone";
+            return (void*)"https://github.com/Nurdich/better-file-sizes";
 
         case EVERYTHING_PLUGIN_PM_START:
             return (void*)(uintptr_t)(StartHost() ? 1 : 0);

@@ -2,7 +2,9 @@
 
 [中文](README.md)
 
-An Everything 1.5 plugin based on m417z's Windhawk mod `explorer-details-better-file-sizes` v1.6 (GPLv3). Windhawk is not required.
+An [Everything](https://www.voidtools.com/) 1.5 plugin based on [m417z](https://github.com/m417z)'s [Windhawk](https://windhawk.net/) mod [`explorer-details-better-file-sizes`](https://windhawk.net/mods/explorer-details-better-file-sizes) v1.6 (GPLv3). [Windhawk](https://windhawk.net/) is not required.
+
+[Windhawk](https://windhawk.net/) is a good tool. It can restyle Windows and add many features. I only wanted folder sizes, and keeping that large loader running in the background felt like too much, so I made this.
 
 In Explorer's details view it can:
 
@@ -27,15 +29,19 @@ Replace `docs/explorer.png` and `docs/plugin.png` with the screenshots.
 | `BetterFileSizes.dll` | The mod that is loaded into each program |
 | `BetterFileSizes.ini` | Settings. Folder sizes use Everything by default |
 
+## Requirements
+
+[Everything](https://www.voidtools.com/) 1.5, version 1.5.0.1350a or newer. The plugin interface starts with that version. Download: [Everything 1.5](https://www.voidtools.com/everything-1.5a/).
+
 ## One-click install
 
-Requires Everything 1.5 (1.5.0.1350a or newer). In PowerShell:
+In PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Nurdich/better-file-sizes-standalone/main/scripts/install.ps1 -OutFile $env:TEMP\bfs-install.ps1; & $env:TEMP\bfs-install.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Nurdich/better-file-sizes/main/scripts/install.ps1 -OutFile $env:TEMP\bfs-install.ps1; & $env:TEMP\bfs-install.ps1"
 ```
 
-The script installs the plugin into Everything. Copying into `Program Files` asks for administrator rights. Builds are on [Releases](https://github.com/Nurdich/better-file-sizes-standalone/releases). A push to `main` makes GitHub Actions compile x64 and x86 and publish a release.
+The script installs the plugin into Everything. Copying into `Program Files` asks for administrator rights. Builds are on [Releases](https://github.com/Nurdich/better-file-sizes/releases). A push to `main` makes GitHub Actions compile x64 and x86 and publish a release.
 
 ## Manual install
 
@@ -97,9 +103,9 @@ The script uses MinGW. It finds MSYS2 or a g++ already on PATH. A full x64 and x
 
 ## License
 
-GNU GPL v3. MinHook is BSD-2-Clause. The Everything SDK excerpts are MIT.
+GNU GPL v3. [MinHook](https://github.com/TsudaKageyu/minhook) is BSD-2-Clause. The [Everything SDK](https://www.voidtools.com/support/everything/sdk/) excerpts are MIT.
 
 - Original author: [m417z](https://github.com/m417z)
 - Original repository: [m417z/my-windhawk-mods](https://github.com/m417z/my-windhawk-mods) (mod page: [explorer-details-better-file-sizes](https://windhawk.net/mods/explorer-details-better-file-sizes))
 - New author: [Nurdich](https://github.com/Nurdich)
-- New repository: [Nurdich/better-file-sizes-standalone](https://github.com/Nurdich/better-file-sizes-standalone)
+- New repository: [Nurdich/better-file-sizes](https://github.com/Nurdich/better-file-sizes)

@@ -92,14 +92,14 @@ jobs:
           body: |
             Everything 1.5 插件，1.0.0。
 
-            中文说明：https://github.com/Nurdich/better-file-sizes-standalone/blob/main/README.md#一键安装
+            中文说明：https://github.com/Nurdich/better-file-sizes/blob/main/README.md#一键安装
 
             在 PowerShell 中执行：
 
             ```powershell
-            powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Nurdich/better-file-sizes-standalone/main/scripts/install.ps1 -OutFile $env:TEMP\bfs-install.ps1; & $env:TEMP\bfs-install.ps1"
+            powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Nurdich/better-file-sizes/main/scripts/install.ps1 -OutFile $env:TEMP\bfs-install.ps1; & $env:TEMP\bfs-install.ps1"
             ```
 
-            English: https://github.com/Nurdich/better-file-sizes-standalone/blob/main/README.en.md#one-click-install
+            English: https://github.com/Nurdich/better-file-sizes/blob/main/README.en.md#one-click-install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

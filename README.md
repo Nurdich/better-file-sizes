@@ -2,7 +2,9 @@
 
 [English](README.en.md)
 
-Everything 1.5 插件。不安装 Windhawk。基于 m417z 的模组 `explorer-details-better-file-sizes` v1.6（GPLv3）。
+[Everything](https://www.voidtools.com/) 1.5 插件。不安装 [Windhawk](https://windhawk.net/)。基于 [m417z](https://github.com/m417z) 的模组 [`explorer-details-better-file-sizes`](https://windhawk.net/mods/explorer-details-better-file-sizes) v1.6（GPLv3）。
+
+[Windhawk](https://windhawk.net/) 并不是不好。它功能很多，可以美化 Windows，也可以增强 Windows。我只想要文件夹大小这一项，背后却要跑着那么大一个加载器，觉得麻烦，于是做了这个工具。
 
 资源管理器「详细信息」里可以：
 
@@ -27,15 +29,19 @@ Everything 1.5 插件。不安装 Windhawk。基于 m417z 的模组 `explorer-de
 | `BetterFileSizes.dll` | 真正生效的模组，会加载进各个程序 |
 | `BetterFileSizes.ini` | 设置。文件夹大小默认走 Everything |
 
+## 环境需求
+
+需要 [Everything](https://www.voidtools.com/) 1.5，版本不低于 1.5.0.1350a。插件接口从这一版才有。下载页面：[Everything 1.5](https://www.voidtools.com/everything-1.5a/)。
+
 ## 一键安装
 
-需要 Everything 1.5（1.5.0.1350a 及以后）。在 PowerShell 里执行：
+在 PowerShell 里执行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Nurdich/better-file-sizes-standalone/main/scripts/install.ps1 -OutFile $env:TEMP\bfs-install.ps1; & $env:TEMP\bfs-install.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Nurdich/better-file-sizes/main/scripts/install.ps1 -OutFile $env:TEMP\bfs-install.ps1; & $env:TEMP\bfs-install.ps1"
 ```
 
-脚本会把插件装进 Everything。装到 `Program Files` 时会要求管理员权限。发布包在 [Releases](https://github.com/Nurdich/better-file-sizes-standalone/releases)。推送到 `main` 后，GitHub Actions 会自动编译 x64 / x86 并发布。
+脚本会把插件装进 Everything。装到 `Program Files` 时会要求管理员权限。发布包在 [Releases](https://github.com/Nurdich/better-file-sizes/releases)。推送到 `main` 后，GitHub Actions 会自动编译 x64 / x86 并发布。
 
 ## 手动安装
 
@@ -97,9 +103,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1
 
 ## 许可
 
-GNU GPL v3。MinHook 为 BSD-2-Clause，Everything SDK 片段为 MIT。
+GNU GPL v3。[MinHook](https://github.com/TsudaKageyu/minhook) 为 BSD-2-Clause，[Everything SDK](https://www.voidtools.com/support/everything/sdk/) 片段为 MIT。
 
 - 原作者：[m417z](https://github.com/m417z)
 - 原仓库：[m417z/my-windhawk-mods](https://github.com/m417z/my-windhawk-mods)（模组页：[explorer-details-better-file-sizes](https://windhawk.net/mods/explorer-details-better-file-sizes)）
 - 新作者：[Nurdich](https://github.com/Nurdich)
-- 新仓库：[Nurdich/better-file-sizes-standalone](https://github.com/Nurdich/better-file-sizes-standalone)
+- 新仓库：[Nurdich/better-file-sizes](https://github.com/Nurdich/better-file-sizes)

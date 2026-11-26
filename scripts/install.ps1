@@ -9,9 +9,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-$Repo = 'Nurdich/better-file-sizes-standalone'
+$Repo = 'Nurdich/better-file-sizes'
 $AssetName = 'BetterFileSizes-windows.zip'
-$RawScript = "https://raw.githubusercontent.com/$Repo/main/scripts/install.ps1"
 $Readme = "https://github.com/$Repo/blob/main/README.en.md#one-click-install"
 
 function Write-Line([string]$Text) {
@@ -54,23 +53,35 @@ function Test-PluginCapable([string]$Exe) {
     if ($v.FileMajorPart -gt 1) { return $true }
     if ($v.FileMajorPart -lt 1 -or $v.FileMinorPart -lt 5) { return $false }
     if ($v.FileMinorPart -gt 5 -or $v.FileBuildPart -gt 0) { return $true }
-    if ($v.FilePrivatePart -eq 0) { return $true }
+    # Exactly 1.5.0.x: plugins exist only from 1.5.0.1350a onward.
     return $v.FilePrivatePart -ge 1350
 }
 
-function Add-Candidate([System.Collections.Generic.List[string]]$List, [string]$Path) {
-    if (-not $Path) { return }
+function Resolve-ExePath([string]$Path) {
+    if (-not $Path) { return $null }
     $Path = $Path.Trim().Trim('"')
     if ($Path -match '^(.*\.exe)') { $Path = $Matches[1] }
-    if ((Test-Path -LiteralPath $Path) -and -not $List.Contains($Path)) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try { return [IO.Path]::GetFullPath($Path) } catch { return $Path }
+}
+
+function Add-Candidate([System.Collections.Generic.List[string]]$List, [string]$Path) {
+    $Path = Resolve-ExePath $Path
+    if ($Path -and -not $List.Contains($Path)) {
         $List.Add($Path)
     }
 }
 
 function Find-Everything {
     $list = New-Object 'System.Collections.Generic.List[string]'
+    $running = New-Object System.Collections.Generic.HashSet[string] -ArgumentList ([StringComparer]::OrdinalIgnoreCase)
     Get-CimInstance Win32_Process -Filter "Name = 'Everything.exe'" -ErrorAction SilentlyContinue |
-        ForEach-Object { Add-Candidate $list $_.ExecutablePath }
+        ForEach-Object {
+            $path = Resolve-ExePath $_.ExecutablePath
+            if (-not $path) { return }
+            [void]$running.Add($path)
+            Add-Candidate $list $path
+        }
 
     $keys = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -105,10 +116,21 @@ function Find-Everything {
             Arch    = Get-ArchName $exe
             Version = $info.FileVersion
             Plugin  = Test-PluginCapable $exe
+            Running = $running.Contains($exe)
         }
-        if ($null -eq $best -or ($item.Plugin -and -not $best.Plugin)) {
-            $best = $item
+        # Plugin support is required, so a non-running plugin install still
+        # beats a running copy that cannot load plugins. Among plugin installs,
+        # a running copy wins. The first running plugin-capable path stays
+        # chosen when several running copies can load plugins.
+        $prefer = $false
+        if ($null -eq $best) {
+            $prefer = $true
+        } elseif ($item.Plugin -and -not $best.Plugin) {
+            $prefer = $true
+        } elseif ($item.Plugin -and $best.Plugin -and $item.Running -and -not $best.Running) {
+            $prefer = $true
         }
+        if ($prefer) { $best = $item }
     }
     return $best
 }
@@ -162,17 +184,74 @@ function Install-Plugin([string]$Package, $Everything) {
     Write-Line 'Folder sizes also need Index folder size turned on in the Everything index options.'
 }
 
+function Get-PrivateRepoError {
+    return "The repository $Repo is private. The installer needs either a local package (-Stage) or an authenticated 'gh' login."
+}
+
+function Invoke-Gh {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GhArgs)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $hasNative = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+    $previousNative = $null
+    if ($hasNative) {
+        $previousNative = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+    }
+    try {
+        $stdout = & gh @GhArgs 2>$null
+        return [pscustomobject]@{
+            Code   = $LASTEXITCODE
+            Output = @($stdout | Where-Object { $null -ne $_ })
+        }
+    } finally {
+        if ($hasNative) {
+            $PSNativeCommandUseErrorActionPreference = $previousNative
+        }
+        $ErrorActionPreference = $previous
+    }
+}
+
+function Test-GhAuthenticated {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $false }
+    $auth = Invoke-Gh auth status
+    return $auth.Code -eq 0
+}
+
+function Save-InstallScriptFromRepo([string]$Dest) {
+    if (-not (Test-GhAuthenticated)) { return $false }
+    $endpoint = "repos/$Repo/contents/scripts/install.ps1?ref=main"
+    $fetched = Invoke-Gh api $endpoint
+    if ($fetched.Code -ne 0 -or -not $fetched.Output) { return $false }
+    $json = ($fetched.Output | ForEach-Object { "$_" }) -join "`n"
+    try {
+        $payload = $json | ConvertFrom-Json
+        $b64 = [string]$payload.content -replace '\s', ''
+        if (-not $b64) { return $false }
+        [IO.File]::WriteAllBytes($Dest, [Convert]::FromBase64String($b64))
+    } catch {
+        if (Test-Path -LiteralPath $Dest) {
+            Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue
+        }
+        return $false
+    }
+    if (-not (Test-Path -LiteralPath $Dest) -or (Get-Item -LiteralPath $Dest).Length -le 0) {
+        return $false
+    }
+    return $true
+}
+
 function Get-LatestPackage {
     Write-Line 'Downloading the latest release...'
-    $headers = @{ 'User-Agent' = 'BetterFileSizes-installer'; 'Accept' = 'application/vnd.github+json' }
-    $rel = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$Repo/releases/latest"
-    $asset = $rel.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
-    if (-not $asset) { throw "The latest release does not include $AssetName." }
+    if (-not (Test-GhAuthenticated)) { throw (Get-PrivateRepoError) }
     $root = Join-Path $env:TEMP 'BetterFileSizes-setup'
     if (Test-Path $root) { Remove-Item -Recurse -Force $root }
     New-Item -ItemType Directory -Force -Path $root | Out-Null
+    $downloaded = Invoke-Gh release download --repo $Repo --pattern $AssetName --dir $root --clobber
     $zip = Join-Path $root $AssetName
-    Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $zip
+    if ($downloaded.Code -ne 0 -or -not (Test-Path -LiteralPath $zip)) {
+        throw (Get-PrivateRepoError)
+    }
     Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
     Remove-Item $zip -Force
     if (-not (Test-Package $root)) { throw 'The release package is incomplete.' }
@@ -199,8 +278,8 @@ function Restart-Elevated([string]$Package) {
     $self = Join-Path $env:TEMP 'BetterFileSizes-install.ps1'
     if ($PSCommandPath -and (Test-Path -LiteralPath $PSCommandPath)) {
         Copy-Item -Force $PSCommandPath $self
-    } else {
-        Invoke-WebRequest -UseBasicParsing -Uri $RawScript -OutFile $self
+    } elseif (-not (Save-InstallScriptFromRepo $self)) {
+        throw (Get-PrivateRepoError)
     }
     $arg = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass',
